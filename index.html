@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#25112f">
+<title>Valentine Cannon — Nivel 1</title>
+<style>
+  :root { --pink:#ff4f9a; --gold:#ffd75e; --ink:#25112f; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#25112f; font-family:system-ui,-apple-system,Segoe UI,sans-serif; color:#fff; }
+  body { display:flex; align-items:center; justify-content:center; }
+  #gameWrap { position:relative; width:min(100vw, 177.7778vh); height:min(100vh, 56.25vw); background:#ffb4d5; overflow:hidden; touch-action:none; }
+  canvas { width:100%; height:100%; display:block; touch-action:none; }
+  .hud { position:absolute; inset:0 0 auto; padding:clamp(8px,2vw,18px); display:flex; align-items:flex-start; justify-content:space-between; gap:8px; pointer-events:none; }
+  .brand { background:rgba(37,17,47,.88); border:2px solid #ff9ac8; border-radius:12px; padding:8px 12px; box-shadow:0 3px 0 rgba(0,0,0,.2); }
+  .brand strong { display:block; font-size:clamp(12px,2vw,20px); letter-spacing:.04em; }
+  .brand span { display:block; color:#ffd5e8; font-size:clamp(10px,1.3vw,13px); }
+  .stats { display:flex; gap:8px; }
+  .stat { min-width:74px; text-align:center; background:rgba(37,17,47,.88); border:2px solid #ff9ac8; border-radius:12px; padding:7px 10px; }
+  .stat small { display:block; color:#ffd5e8; font-size:11px; }
+  .stat b { font-size:clamp(14px,2vw,20px); }
+  .help { position:absolute; left:50%; bottom:clamp(8px,2vw,18px); transform:translateX(-50%); width:max-content; max-width:92%; text-align:center; background:rgba(37,17,47,.86); border:1px solid #ff9ac8; border-radius:999px; padding:8px 14px; font-size:clamp(10px,1.5vw,14px); pointer-events:none; }
+  .actions { position:absolute; right:clamp(8px,2vw,18px); bottom:clamp(8px,2vw,18px); display:flex; gap:6px; }
+  button { color:white; background:#d9277d; border:2px solid #ffd1e6; border-radius:10px; font-weight:800; padding:9px 12px; cursor:pointer; box-shadow:0 3px 0 #8c1550; }
+  button:active { transform:translateY(2px); box-shadow:0 1px 0 #8c1550; }
+  #message { display:none; position:absolute; inset:0; background:rgba(35,12,43,.65); align-items:center; justify-content:center; text-align:center; padding:20px; }
+  #message .panel { max-width:420px; width:100%; background:#35183f; border:3px solid #ff8dc2; border-radius:20px; padding:24px; box-shadow:0 10px 35px #2b0b2e80; }
+  #message h2 { margin:0 0 8px; font-size:clamp(24px,5vw,38px); color:#ffd75e; }
+  #message p { margin:0 0 18px; color:#ffe6f2; }
+  #message button { font-size:16px; }
+  @media(max-width:520px) {
+    .brand { padding:6px 8px; }
+    .stats { gap:4px; }
+    .stat { min-width:55px; padding:5px 6px; }
+    .actions { bottom:46px; }
+    .help { bottom:8px; max-width:75%; line-height:1.25; }
+  }
+</style>
+</head>
+<body>
+<div id="gameWrap" aria-label="Juego Valentine Cannon">
+  <canvas id="game" width="960" height="540"></canvas>
+  <div class="hud">
+    <div class="brand"><strong>♥ VALENTINE CANNON</strong><span>NIVEL 1 · ¡Derriba la torre!</span></div>
+    <div class="stats">
+      <div class="stat"><small>DISPAROS</small><b id="shots">0</b></div>
+      <div class="stat"><small>PUNTOS</small><b id="score">0</b></div>
+    </div>
+  </div>
+  <div class="help" id="help">Arrastra a Red hacia atrás y suelta para disparar · También puedes tocar y arrastrar</div>
+  <div class="actions"><button id="resetBtn" type="button">↻ Reiniciar</button></div>
+  <div id="message"><div class="panel"><h2 id="messageTitle">¡Nivel completado!</h2><p id="messageText">¡La torre cayó!</p><button id="nextBtn" type="button">Jugar otra vez</button></div></div>
+</div>
+<script>
+(() => {
+'use strict';
+const assets = {};
+['valentine-background.jpg','red.png','pig.png','king-pig.png','slingshot.png','wood-horizontal.png','wood-vertical.png','ice-vertical.png','ice-horizontal.png','stone.png','heart-crate.png'].forEach(name => { const im=new Image(); im.src='assets/'+name; assets[name]=im; });
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W=960,H=540, groundY=468;
+const shotsEl=document.getElementById('shots'), scoreEl=document.getElementById('score');
+const helpEl=document.getElementById('help'), message=document.getElementById('message');
+const messageTitle=document.getElementById('messageTitle'), messageText=document.getElementById('messageText');
+let bird, blocks, pigs, particles, shots, score, dragging, dragPos, won, lastTime, stableTimer, gameOver;
+const launcher={x:175,y:385};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function makeBlock(x,y,w,h,type='wood') { return {x,y,w,h,type,vx:0,vy:0,angle:0,spin:0,hp:1,alive:true}; }
+function reset(){
+  bird={x:launcher.x,y:launcher.y,r:19,vx:0,vy:0,active:false,used:false};
+  blocks=[
+    makeBlock(665,430,24,76,'wood'), makeBlock(753,430,24,76,'wood'),
+    makeBlock(706,382,100,18,'wood'),
+    makeBlock(680,339,18,68,'ice'), makeBlock(738,339,18,68,'ice'),
+    makeBlock(709,300,78,17,'wood'),
+    makeBlock(692,264,18,53,'wood'), makeBlock(733,264,18,53,'wood'),
+    makeBlock(712,232,58,15,'wood'),
+    makeBlock(704,202,17,44,'ice'), makeBlock(740,202,17,44,'ice'),
+    makeBlock(721,175,50,14,'wood')
+  ];
+  pigs=[{x:710,y:411,r:17,alive:true,vx:0,vy:0},{x:710,y:326,r:15,alive:true,vx:0,vy:0},{x:720,y:147,r:16,alive:true,vx:0,vy:0}];
+  particles=[]; shots=0;score=0;dragging=false;dragPos=null;won=false;stableTimer=0;gameOver=false;
+  shotsEl.textContent=shots;scoreEl.textContent=score;message.style.display='none';
+  helpEl.textContent='Arrastra a Red hacia atrás y suelta para disparar';
+}
+function roundedRect(x,y,w,h,r,fill,stroke) {
+ ctx.beginPath();ctx.roundRect(x,y,w,h,r); if(fill){ctx.fillStyle=fill;ctx.fill();} if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}
+}
+function heart(x,y,size,color,alpha=1){
+ ctx.save();ctx.translate(x,y);ctx.scale(size/30,size/30);ctx.globalAlpha=alpha;ctx.beginPath();
+ ctx.moveTo(0,10);ctx.bezierCurveTo(-28,-7,-13,-24,0,-10);ctx.bezierCurveTo(13,-24,28,-7,0,10);
+ ctx.fillStyle=color;ctx.fill();ctx.restore();
+}
+function drawBackground(){
+ const bg=assets['valentine-background.jpg'];
+ if(bg && bg.complete && bg.naturalWidth){ctx.drawImage(bg,0,0,W,H);}
+ else {const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#ff8ec0');g.addColorStop(1,'#ffebf3');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+ // A playable foreground shelf over the illustrated landscape
+ ctx.fillStyle='#4a254d';ctx.beginPath();ctx.moveTo(0,groundY-8);ctx.quadraticCurveTo(125,groundY-31,265,groundY-8);ctx.lineTo(960,groundY-8);ctx.lineTo(960,H);ctx.lineTo(0,H);ctx.closePath();ctx.fill();
+ ctx.fillStyle='#5ca65c';ctx.beginPath();ctx.moveTo(0,groundY-15);ctx.quadraticCurveTo(125,groundY-37,265,groundY-15);ctx.lineTo(960,groundY-15);ctx.lineTo(960,groundY-6);ctx.lineTo(0,groundY-6);ctx.closePath();ctx.fill();
+ for(let x=18;x<960;x+=54){heart(x,groundY+35,12,'#ff4f9a',.7);}
+}
+
+function drawLauncher(){
+ const sl=assets['slingshot.png'];
+ if(sl&&sl.complete&&sl.naturalWidth){ctx.drawImage(sl,launcher.x-39,launcher.y-13,78,108);}
+ else {ctx.strokeStyle='#6b382c';ctx.lineWidth=15;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(launcher.x-5,groundY-16);ctx.lineTo(launcher.x,launcher.y-3);ctx.lineTo(launcher.x+20,groundY-16);ctx.stroke();}
+ ctx.strokeStyle='#5d2938';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(launcher.x-10,launcher.y-8);ctx.lineTo(bird.active?bird.x:launcher.x,bird.active?bird.y:launcher.y);ctx.stroke();
+}
+
+function drawBird(b){
+ const im=assets['red.png'];
+ if(im&&im.complete&&im.naturalWidth){ctx.drawImage(im,b.x-34,b.y-32,68,64);return;}
+ ctx.save();ctx.translate(b.x,b.y);ctx.fillStyle='#e93646';ctx.beginPath();ctx.arc(0,0,b.r,0,Math.PI*2);ctx.fill();ctx.restore();
+}
+
+function drawPig(p){
+ if(!p.alive)return;
+ const im=assets[p===pigs[2]?'king-pig.png':'pig.png'];
+ if(im&&im.complete&&im.naturalWidth){const size=p===pigs[2]?57:52;ctx.drawImage(im,p.x-size/2,p.y-size/2,size,size);return;}
+ ctx.fillStyle='#6dcf6a';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+}
+
+function drawBlock(b){
+ if(!b.alive)return;
+ ctx.save();ctx.translate(b.x+b.w/2,b.y+b.h/2);ctx.rotate(b.angle);
+ let key;
+ if(b.type==='ice') key=(b.h>b.w?'ice-vertical.png':'ice-horizontal.png');
+ else key=(b.h>b.w?'wood-vertical.png':'wood-horizontal.png');
+ let im=assets[key];
+ if(b.type==='stone') im=assets['stone.png'];
+ if(im&&im.complete&&im.naturalWidth){ctx.drawImage(im,-b.w/2,-b.h/2,b.w,b.h);}
+ else {const fill=b.type==='ice'?'#80d8f3':'#b97843';roundedRect(-b.w/2,-b.h/2,b.w,b.h,3,fill,'#784327');}
+ ctx.restore();
+}
+
+function drawTrajectory(){
+ if(!dragging||!dragPos)return;
+ const dx=launcher.x-dragPos.x,dy=launcher.y-dragPos.y;
+ let vx=dx*5.1,vy=dy*5.1;
+ ctx.fillStyle='rgba(255,255,255,.9)';
+ for(let i=1;i<=24;i++){let t=i*.075,x=launcher.x+vx*t,y=launcher.y+vy*t+0.5*440*t*t;if(y>groundY-18)break;ctx.beginPath();ctx.arc(x,y,Math.max(1,4-i*.11),0,Math.PI*2);ctx.fill();}
+}
+function burst(x,y,color,n=10){
+ for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=40+Math.random()*180;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-30,life:.5+Math.random()*.7,color,size:2+Math.random()*5});}
+}
+function circleRect(cx,cy,r,b){
+ const px=clamp(cx,b.x,b.x+b.w),py=clamp(cy,b.y,b.y+b.h);let dx=cx-px,dy=cy-py;return dx*dx+dy*dy<r*r;
+}
+function physics(dt){
+ if(bird.active){
+   bird.vy+=440*dt;bird.x+=bird.vx*dt;bird.y+=bird.vy*dt;
+   if(bird.y+bird.r>groundY-13){bird.y=groundY-13-bird.r;bird.vy*=-.28;bird.vx*=.72;if(Math.abs(bird.vy)<55)bird.vy=0;}
+   for(const b of blocks){if(!b.alive)continue;if(circleRect(bird.x,bird.y,bird.r,b)){
+     b.vx+=bird.vx*.22;b.vy+=bird.vy*.18-55;b.spin+=(bird.vx*.0008);bird.vx*=.63;bird.vy*=-.22;
+     if(Math.abs(bird.vx)+Math.abs(bird.vy)>150){b.hp-=.65;if(b.hp<=0){b.alive=false;score+=50;burst(b.x+b.w/2,b.y+b.h/2,b.type==='ice'?'#9beaff':'#d99a63',12);scoreEl.textContent=score;}}
+   }}
+   for(const p of pigs){if(!p.alive)continue;let dx=bird.x-p.x,dy=bird.y-p.y;if(dx*dx+dy*dy<(bird.r+p.r)**2){p.alive=false;score+=100;scoreEl.textContent=score;burst(p.x,p.y,'#8de875',18);bird.vx*=.72;}}
+   if(bird.x>W+60||bird.y>H+60||bird.x<-50){bird.active=false;bird.used=true;}
+ }
+ // gravity and rotation on blocks
+ for(const b of blocks){if(!b.alive)continue;
+   b.vy+=340*dt;b.x+=b.vx*dt;b.y+=b.vy*dt;b.angle+=b.spin*dt;
+   b.vx*=Math.pow(.985,dt*60);b.spin*=Math.pow(.97,dt*60);
+   if(b.y+b.h>groundY-12){b.y=groundY-12-b.h;b.vy*=-.18;b.vx*=.82;b.spin*=.55;if(Math.abs(b.vy)<28)b.vy=0;}
+   // crude block-to-block collision/stacking
+   for(const other of blocks){if(other===b||!other.alive)continue;
+     if(b.x<other.x+other.w&&b.x+b.w>other.x&&b.y<other.y+other.h&&b.y+b.h>other.y){
+       const overlapX=Math.min(b.x+b.w-other.x,other.x+other.w-b.x),overlapY=Math.min(b.y+b.h-other.y,other.y+other.h-b.y);
+       if(overlapY<overlapX){if(b.y<other.y){b.y=other.y-b.h;b.vy=Math.min(0,b.vy)*.25;}else{b.y=other.y+other.h;b.vy=Math.max(0,b.vy)*.25;}}
+       else {if(b.x<other.x)b.x-=overlapX/2;else b.x+=overlapX/2;b.vx*=-.25;}
+     }
+   }
+   if(Math.abs(b.vx)+Math.abs(b.vy)>260&&Math.random()<.02){b.hp-=.2;if(b.hp<=0){b.alive=false;score+=25;scoreEl.textContent=score;burst(b.x+b.w/2,b.y+b.h/2,'#ffc3dd',8);}}
+ }
+ for(const p of pigs){if(!p.alive)continue;p.vy+=400*dt;p.y+=p.vy*dt;if(p.y+p.r>groundY-12){p.y=groundY-12-p.r;p.vy=0;}for(const b of blocks){if(b.alive&&p.x+p.r>b.x&&p.x-p.r<b.x+b.w&&p.y+p.r>b.y&&p.y-p.r<b.y+b.h&&Math.abs(b.vy)>60){p.alive=false;score+=100;scoreEl.textContent=score;burst(p.x,p.y,'#8de875',15);}}}
+ particles=particles.filter(p=>p.life>0);
+ for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=200*dt;}
+ if(!pigs.some(p=>p.alive)&&!won){won=true;gameOver=true;messageTitle.textContent='¡Nivel completado! ♥';messageText.textContent='¡Derribaste a todos los cerdos! Puntuación: '+score;message.style.display='flex';}
+ if(bird.used&&!bird.active&&!won&&!gameOver){stableTimer+=dt;if(stableTimer>1.5){gameOver=true;messageTitle.textContent='¡Inténtalo otra vez!';messageText.textContent='Quedaron cerdos en pie. Reinicia el nivel para volver a apuntar.';message.style.display='flex';}}
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);drawBackground();
+ // launch sling back band
+ ctx.strokeStyle='#7a3d31';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(launcher.x-10,launcher.y-5);ctx.lineTo(launcher.x+12,launcher.y+3);ctx.stroke();
+ drawLauncher();
+ for(const b of blocks)drawBlock(b);
+ for(const p of pigs)drawPig(p);
+ if(!bird.used||bird.active)drawBird(bird);
+ drawTrajectory();
+ for(const p of particles){ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,p.size,p.size);ctx.globalAlpha=1;}
+ // little foreground flowers
+ for(const x of [45,95,250,500,900]){ctx.fillStyle='#ffd6eb';ctx.beginPath();for(let i=0;i<5;i++){let a=i*Math.PI*2/5;ctx.moveTo(x,groundY-17);ctx.arc(x+Math.cos(a)*6,groundY-17+Math.sin(a)*6,4,0,Math.PI*2);}ctx.fill();ctx.fillStyle='#ffd75e';ctx.beginPath();ctx.arc(x,groundY-17,3,0,Math.PI*2);ctx.fill();}
+}
+function frame(t){let dt=Math.min(.033,(t-(lastTime||t))/1000);lastTime=t;if(!gameOver)physics(dt);draw();requestAnimationFrame(frame);}
+function pointerPos(e){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};}
+function pointerDown(e){
+ if(gameOver||bird.active||bird.used)return;
+ const p=pointerPos(e),dx=p.x-bird.x,dy=p.y-bird.y;
+ if(dx*dx+dy*dy<58*58|| (p.x<245&&p.y>320)){dragging=true;dragPos={x:clamp(p.x,launcher.x-75,launcher.x+15),y:clamp(p.y,launcher.y-70,launcher.y+70)};canvas.setPointerCapture?.(e.pointerId);e.preventDefault();}
+}
+function pointerMove(e){if(!dragging)return;const p=pointerPos(e);dragPos={x:clamp(p.x,launcher.x-90,launcher.x+15),y:clamp(p.y,launcher.y-80,launcher.y+80)};bird.x=dragPos.x;bird.y=dragPos.y;e.preventDefault();}
+function pointerUp(e){if(!dragging)return;dragging=false;const dx=launcher.x-bird.x,dy=launcher.y-bird.y;const power=Math.hypot(dx,dy);if(power>10){bird.vx=dx*5.1;bird.vy=dy*5.1;bird.active=true;bird.used=false;shots++;shotsEl.textContent=shots;helpEl.textContent='¡Buen disparo! Observa cómo cae la torre.';}else{bird.x=launcher.x;bird.y=launcher.y;}dragPos=null;e.preventDefault();}
+canvas.addEventListener('pointerdown',pointerDown,{passive:false});canvas.addEventListener('pointermove',pointerMove,{passive:false});canvas.addEventListener('pointerup',pointerUp,{passive:false});canvas.addEventListener('pointercancel',pointerUp,{passive:false});
+document.getElementById('resetBtn').addEventListener('click',reset);
+document.getElementById('nextBtn').addEventListener('click',reset);
+reset();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
