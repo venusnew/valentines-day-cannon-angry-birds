@@ -160,7 +160,7 @@ function physics(dt){
    if(bird.x>W+60||bird.y>H+60||bird.x<-50){bird.active=false;bird.used=true;}
  }
  // gravity and rotation on blocks
- for(const b of blocks){if(!b.alive)continue;
+ for(const b of blocks){if(!b.alive)continue;if(shots===0) continue;
    b.vy+=340*dt;b.x+=b.vx*dt;b.y+=b.vy*dt;b.angle+=b.spin*dt;
    b.vx*=Math.pow(.985,dt*60);b.spin*=Math.pow(.97,dt*60);
    if(b.y+b.h>groundY-12){b.y=groundY-12-b.h;b.vy*=-.18;b.vx*=.82;b.spin*=.55;if(Math.abs(b.vy)<28)b.vy=0;}
